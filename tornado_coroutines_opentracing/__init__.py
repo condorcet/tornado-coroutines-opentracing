@@ -4,49 +4,109 @@ from tornado import gen
 from opentracing import global_tracer
 from opentracing.scope_managers.tornado import tracer_stack_context
 
-enabled = True
 
-
-original_gen_engine = gen.engine
 original_gen_coroutine = gen.coroutine
 
 
-def span_decorator(func, decorator):
+class State:
+    enabled = True
 
-    @decorator
+
+def ff_coroutine(func_or_coro):
+    """
+    Extended `gen.coroutine` decorator that provides to fire & forget coroutine
+    without losing parent scope while yielding it:
+    ```
+        from opentracing import global_tracer
+
+        @ff_coroutine
+        @gen.coroutine
+        def coro():
+            ...
+            with global_tracer().start_active_span(
+                operation_name='child,
+                # будет взят родительский спан
+                child_of=global_tracer().active_span
+            ):
+                # do something
+                pass
+
+        ...
+
+        with global_tracer().start_active_span('root'):
+            coro()
+    ```
+
+    Should remember following things:
+
+    1) Child spans could be started and finished later than parent span had
+    been finished. It's expected behaviour:
+    ```
+    --------------------------------------------------> time
+         * parent span *
+               |
+               | -> * child span *
+               |
+                ------------> * child span *
+    ```
+
+    2) Decorator should be used carefully with recursive coroutines. It can
+    lead to endless growth of child spans and stack contexts:
+    ```
+    --------------------------------------------------> время
+         * parent span *
+               |
+                --> * child 1 *
+                        |
+                         --> * child 2 *
+                                 |
+                                  --> * child 3 *
+                                          |
+                                           ...
+    ```
+
+    """
+
+    if hasattr(func_or_coro, '__ff_traced_coroutine__'):
+        return func_or_coro
+
+    if not gen.is_coroutine_function(func_or_coro):
+        coro = original_gen_coroutine(func_or_coro)
+    else:
+        coro = func_or_coro
+
+    @functools.wraps(coro)
     def _func(*args, **kwargs):
-        span = kwargs.pop('__span')
-        if span:
-            with global_tracer().scope_manager.activate(span, False):
-                yield func(*args, **kwargs)
-        else:
-            yield func(*args, **kwargs)
-    return _func
 
+        if not State.enabled:
+            return coro
 
-def wrap_decorator(decorator):
+        span = global_tracer().active_span
 
-    def wrapped(func):
-
-        coro_func = decorator(func)
-        func = span_decorator(coro_func, decorator)
-
-        @functools.wraps(func)
-        def _func(*args, **kwargs):
-            span = global_tracer().active_span
-            if span and enabled:
-                with tracer_stack_context():
-                    return func(*args, __span=span, **kwargs)
+        @original_gen_coroutine
+        @functools.wraps(coro)
+        def _coro(*args, **kwargs):
+            exc = None
+            if span:
+                with global_tracer().scope_manager.activate(span, False):
+                    try:
+                        res = yield coro(*args, **kwargs)
+                    except Exception as e:
+                        # Catch all exceptions but raise them out of scope to
+                        # avoid logging errors twice while yielding coroutine.
+                        exc = e
+                if exc:
+                    raise exc
             else:
-                return func(*args, __span=None, **kwargs)
+                res = yield coro(*args, **kwargs)
+            raise gen.Return(res)
 
-        # As well as original decorator the wrapper should return a coroutine.
-        _func.__wrapped__ = coro_func.__wrapped__
-        _func.__tornado_coroutine__ = True
-        return _func
+        with tracer_stack_context():
+            return _coro(*args, **kwargs)
 
-    return wrapped
+    _func.__ff_traced_coroutine__ = True
 
-
-gen.engine = wrap_decorator(original_gen_engine)
-gen.coroutine = wrap_decorator(original_gen_coroutine)
+    # Return function that looks like Tornado coroutine.
+    _func.__wrapped__ = coro.__wrapped__
+    _func.__tornado_coroutine__ = True
+    return _func
