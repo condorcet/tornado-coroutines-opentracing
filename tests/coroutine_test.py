@@ -67,6 +67,7 @@ class _BaseCoroTestCase(_Base):
             self.coro = self._decorator(self.coro)
             self.nested_coro = self._decorator(self.nested_coro)
             self.coros = self._decorator(self.coros)
+            self.coro_exception = self._decorator(self.coro_exception)
 
     def _decorator(self, func):
         return getattr(gen, self.decorator)(func)
@@ -83,6 +84,7 @@ class _BaseCoroTestCase(_Base):
         return finished_spans
 
     def coro(self, name='coro'):
+        yield gen.sleep(0.1)
         with global_tracer().start_active_span(name):
             yield gen.sleep(0.1)
 
@@ -93,6 +95,10 @@ class _BaseCoroTestCase(_Base):
     def nested_coro(self):
         with global_tracer().start_active_span('coro'):
             yield self.coro('nested')
+
+    def coro_exception(self):
+        with global_tracer().start_active_span('coro'):
+            raise Exception('foobar')
 
     def test_fire_and_forget_single_coro(self):
 
@@ -157,6 +163,25 @@ class _BaseCoroTestCase(_Base):
 
         empty_span(root_span, 'root')
         empty_span(coro_span, 'coro')
+
+        parent_of(root_span, coro_span)
+
+    @gen_test
+    def test_yield_exception(self):
+        with self.assertRaisesRegexp(Exception, 'foobar'):
+            with global_tracer().start_active_span('root'):
+                yield self.coro_exception()
+
+        spans = self.tracer.finished_spans()
+        assert len(spans) == 2
+
+        coro_span, root_span = spans
+
+        assert root_span.tags == {'error': True}
+        assert len(root_span.logs) == 1
+
+        assert coro_span.tags == {'error': True}
+        assert len(coro_span.logs) == 1
 
         parent_of(root_span, coro_span)
 
