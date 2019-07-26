@@ -5,8 +5,6 @@ from opentracing import global_tracer
 from opentracing.scope_managers.tornado import tracer_stack_context
 
 
-enabled = True
-
 original_gen_coroutine = gen.coroutine
 
 
@@ -92,9 +90,6 @@ def ff_coroutine(func_or_coro):
     @functools.wraps(coro)
     def _func(*args, **kwargs):
 
-        if not enabled:
-            return coro(*args, **kwargs)
-
         span = global_tracer().active_span
 
         @original_gen_coroutine
@@ -124,6 +119,3 @@ def ff_coroutine(func_or_coro):
     _func.__wrapped__ = coro.__wrapped__
     _func.__tornado_coroutine__ = True
     return _func
-
-
-gen.coroutine = ff_coroutine
