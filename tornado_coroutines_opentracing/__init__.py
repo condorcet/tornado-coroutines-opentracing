@@ -8,11 +8,14 @@ from opentracing.scope_managers.tornado import tracer_stack_context
 original_gen_coroutine = gen.coroutine
 
 
+class State:
+    enabled = True
+
+
 def ff_coroutine(func_or_coro):
     """
-    Декоратор над Торнадо-корутиной (`gen.coroutine`) позволяющий выполнять
-    корутину по принципу fire & forget сохраняя родительский контекста спана
-    в рамках которого эта корутина была вызвана:
+    Extended `gen.coroutine` decorator that provides to fire & forget coroutine
+    without losing parent scope while yielding it:
     ```
         from opentracing import global_tracer
 
@@ -34,36 +37,21 @@ def ff_coroutine(func_or_coro):
             coro()
     ```
 
-    Подход работает в случае непосредственного вызова корутины, но не работает
-    для запланированных в event loop-е колбэков:
-    ```
-        IOLoop.instance().add_callback(coro)
-    ```
+    Should remember following things:
 
-    В настоящее время, контекстный менеджер `opentracing.TornadoScopeManager`
-    (или торнадовский StackContext на котором он построен?) не позволяет
-    правильно сохранять родительский контекст для корутин, которые будут
-    вызваны без возвращения управления (без yield) (см. также замечание в
-    https://github.com/opentracing/opentracing-python/blob/f6bcb0aad81ec9d89414
-    3148612312bd48a02a91/opentracing/scope_managers/tornado.py#L64).
-
-    В связи с изменениями, следует помнить о следующем:
-
-    1) Время открытия и завершения дочернего спан в корутине может быть позже
-       завершения родительского спана, что нормально:
+    1) Child spans could be started and finished later than parent span had
+    been finished. It's expected behaviour:
     ```
-    --------------------------------------------------> время
+    --------------------------------------------------> time
          * parent span *
                |
-               | -> * child span * (завершена позже родительского)
+               | -> * child span *
                |
-                ------------> * child span * (начата и завершена позже)
+                ------------> * child span *
     ```
 
-    2) Осторожно использовать декоратор в случае рекурсивных вызовов корутины
-       (например с целью периодичного полинга), порождающей дочерний спан.
-       Это может привести к бесконечному росту дочерних спанов и стэку
-       контекстов (`tracer_stack_context`):
+    2) Decorator should be used carefully with recursive coroutines. It can
+    lead to endless growth of child spans and stack contexts:
     ```
     --------------------------------------------------> время
          * parent span *
@@ -89,6 +77,9 @@ def ff_coroutine(func_or_coro):
 
     @functools.wraps(coro)
     def _func(*args, **kwargs):
+
+        if not State.enabled:
+            return coro
 
         span = global_tracer().active_span
 

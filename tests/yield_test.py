@@ -19,7 +19,6 @@ class YieldingTestCase(_Base):
     """
 
     @ff_coroutine
-    @gen.coroutine
     def coro(self, value=None, exc=None):
         yield gen.sleep(0.1)
         if exc:
@@ -28,7 +27,6 @@ class YieldingTestCase(_Base):
             raise gen.Return(value)
 
     @ff_coroutine
-    @gen.coroutine
     def coro_with_span(self, name, value=None, exc=None):
         with global_tracer().start_active_span(
                 operation_name=name,

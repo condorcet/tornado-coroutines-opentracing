@@ -12,7 +12,7 @@ from . import _Base, is_parent_of, empty_span, has_no_parent, has_exception
 class FireAndForgetTestCase(_Base):
 
     """
-    Test-case about fire & forget execution of coroutines.
+    Test-case about fire & forget coroutines.
 
     NB: almost each test make root span which context will be taken by child
     coroutine. After invoking coroutine as fire & forget, context manager will
@@ -165,7 +165,6 @@ class FireAndForgetTestCase(_Base):
         Yielding coroutines in invoked coroutine that open child spans.
         """
         @ff_coroutine
-        @gen.coroutine
         def coro():
             yield self.coro('coro_1')
             yield self.coro('coro_2')
@@ -188,7 +187,6 @@ class FireAndForgetTestCase(_Base):
         """
 
         @ff_coroutine
-        @gen.coroutine
         def coros(*names):
             with global_tracer().start_active_span(
                     operation_name='fire_and_forget',
@@ -246,7 +244,6 @@ class FireAndForgetTestCase(_Base):
         """
 
         @ff_coroutine
-        @gen.coroutine
         def second_coro():
             yield gen.sleep(0.1)
             with global_tracer().start_active_span(
@@ -256,7 +253,6 @@ class FireAndForgetTestCase(_Base):
                 yield gen.sleep(0.1)
 
         @ff_coroutine
-        @gen.coroutine
         def first_coro():
             with global_tracer().start_active_span(
                     operation_name='first_coro',
@@ -283,7 +279,6 @@ class FireAndForgetTestCase(_Base):
         """
 
         @ff_coroutine
-        @gen.coroutine
         def coro(name):
             yield self.coro(name)
 
@@ -307,12 +302,10 @@ class FireAndForgetTestCase(_Base):
         """
 
         @ff_coroutine
-        @gen.coroutine
         def coro(name):
             yield self.coro(name)
 
         @ff_coroutine
-        @gen.coroutine
         def coros(*names):
             with global_tracer().start_active_span(
                     operation_name='fire_and_forget',
@@ -338,17 +331,15 @@ class FireAndForgetTestCase(_Base):
     def test_coro_multiple_fire_and_forget_make_own_span_per_each_coro(self):
 
         """
-        Invoke coroutine with child span and fire and forget several others
+        Invoke coroutine with child span and fire & forget several others
         with their own child spans inside.
         """
 
         @ff_coroutine
-        @gen.coroutine
         def coro(name):
             yield self.coro(name)
 
         @ff_coroutine
-        @gen.coroutine
         def coros(*names):
             yield gen.sleep(0.1)
             for name in names:
@@ -382,7 +373,6 @@ class FireAndForgetTestCase(_Base):
         count = 3
 
         @ff_coroutine
-        @gen.coroutine
         def coro(n=1):
             yield gen.moment
             with global_tracer().start_active_span(
@@ -411,7 +401,6 @@ class FireAndForgetTestCase(_Base):
         count = 4
 
         @ff_coroutine
-        @gen.coroutine
         def coro(n=1):
             yield gen.moment
             with global_tracer().start_active_span(
@@ -422,7 +411,7 @@ class FireAndForgetTestCase(_Base):
                     coro(n+1)
                 elif n < count:
                     with tracer_stack_context():
-                        # Корутина теперь не имеет родителя.
+                        # clear current scope.
                         coro(n+1)
 
         with global_tracer().start_active_span('root'):
@@ -470,7 +459,6 @@ class FireAndForgetExceptionsTestCase(_Base):
             self.stop(fut.exception())
 
         @ff_coroutine
-        @gen.coroutine
         def coro(exc):
             raise exc
 
@@ -489,7 +477,6 @@ class FireAndForgetExceptionsTestCase(_Base):
             self.stop(fut.exception())
 
         @ff_coroutine
-        @gen.coroutine
         def coro(exc):
             with global_tracer().start_active_span(
                     operation_name='coro',
@@ -510,7 +497,6 @@ class FireAndForgetExceptionsTestCase(_Base):
     def test_exception_in_root_span(self):
 
         @ff_coroutine
-        @gen.coroutine
         def coro():
             raise Exception('foobar')
 
@@ -523,7 +509,6 @@ class FireAndForgetExceptionsTestCase(_Base):
     def test_exception_in_own_span_while_yielded_coro(self):
 
         @ff_coroutine
-        @gen.coroutine
         def coro(exc):
             with global_tracer().start_active_span(
                     operation_name='coro',
@@ -548,7 +533,6 @@ class FireAndForgetExceptionsTestCase(_Base):
     def test_exception_while_yielded_coro_with_own_span(self):
 
         @ff_coroutine
-        @gen.coroutine
         def coro(exc):
             yield gen.sleep(0.1)
             yield self.coro_with_span('coro', exc)
@@ -567,7 +551,6 @@ class FireAndForgetExceptionsTestCase(_Base):
     def test_exception_while_fire_and_forget_another_coroutine(self):
 
         @ff_coroutine
-        @gen.coroutine
         def coro_exception(exc):
             with global_tracer().start_active_span(
                     operation_name='coro_exception',
@@ -577,7 +560,6 @@ class FireAndForgetExceptionsTestCase(_Base):
                 raise exc
 
         @ff_coroutine
-        @gen.coroutine
         def coro(exc):
             with global_tracer().start_active_span(
                     operation_name='coro',
