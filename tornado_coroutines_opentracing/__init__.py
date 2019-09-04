@@ -53,7 +53,7 @@ def ff_coroutine(func_or_coro):
     2) Decorator should be used carefully with recursive coroutines. It can
     lead to endless growth of child spans and stack contexts:
     ```
-    --------------------------------------------------> время
+    --------------------------------------------------> time
          * parent span *
                |
                 --> * child 1 *
@@ -79,7 +79,7 @@ def ff_coroutine(func_or_coro):
     def _func(*args, **kwargs):
 
         if not State.enabled:
-            return coro
+            return coro(*args, **kwargs)
 
         span = global_tracer().active_span
 
