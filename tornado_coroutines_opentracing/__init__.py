@@ -2,7 +2,8 @@
 import functools
 from tornado import gen
 from opentracing import global_tracer
-from opentracing.scope_managers.tornado import tracer_stack_context
+from opentracing.scope_managers.tornado import _TracerRequestContext,\
+    ThreadSafeStackContext, _TracerRequestContextManager, _TornadoScope
 
 
 original_gen_coroutine = gen.coroutine
@@ -10,6 +11,23 @@ original_gen_coroutine = gen.coroutine
 
 class State:
     enabled = True
+
+
+def tracer_stack_context(parent_span=None):
+    """
+    Replacement of original `tracer_stack_context` from OpenTracing.
+    It allows to specify span in new stack context that will be parent for
+    children spans.
+    """
+    if parent_span is not None:
+        scope = _TornadoScope(
+            global_tracer().scope_manager, parent_span, False)
+    else:
+        scope = None
+    context = _TracerRequestContext(scope)
+    return ThreadSafeStackContext(
+        lambda: _TracerRequestContextManager(context)
+    )
 
 
 def ff_coroutine(func_or_coro):
@@ -25,7 +43,7 @@ def ff_coroutine(func_or_coro):
             ...
             with global_tracer().start_active_span(
                 operation_name='child,
-                # будет взят родительский спан
+                # parent span will be taken
                 child_of=global_tracer().active_span
             ):
                 # do something
@@ -53,7 +71,7 @@ def ff_coroutine(func_or_coro):
     2) Decorator should be used carefully with recursive coroutines. It can
     lead to endless growth of child spans and stack contexts:
     ```
-    --------------------------------------------------> время
+    --------------------------------------------------> time
          * parent span *
                |
                 --> * child 1 *
@@ -69,7 +87,6 @@ def ff_coroutine(func_or_coro):
 
     if hasattr(func_or_coro, '__ff_traced_coroutine__'):
         return func_or_coro
-
     if not gen.is_coroutine_function(func_or_coro):
         coro = original_gen_coroutine(func_or_coro)
     else:
@@ -77,32 +94,11 @@ def ff_coroutine(func_or_coro):
 
     @functools.wraps(coro)
     def _func(*args, **kwargs):
-
         if not State.enabled:
-            return coro
+            return coro(*args, **kwargs)
 
-        span = global_tracer().active_span
-
-        @original_gen_coroutine
-        @functools.wraps(coro)
-        def _coro(*args, **kwargs):
-            exc = None
-            if span:
-                with global_tracer().scope_manager.activate(span, False):
-                    try:
-                        res = yield coro(*args, **kwargs)
-                    except Exception as e:
-                        # Catch all exceptions but raise them out of scope to
-                        # avoid logging errors twice while yielding coroutine.
-                        exc = e
-                if exc:
-                    raise exc
-            else:
-                res = yield coro(*args, **kwargs)
-            raise gen.Return(res)
-
-        with tracer_stack_context():
-            return _coro(*args, **kwargs)
+        with tracer_stack_context(global_tracer().active_span):
+            return coro(*args, **kwargs)
 
     _func.__ff_traced_coroutine__ = True
 
