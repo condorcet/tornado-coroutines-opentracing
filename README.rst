@@ -1,7 +1,10 @@
-Supporting fire & forget Tornado coroutines in python opentracing
-===================================================
+.. image:: https://img.shields.io/badge/OpenTracing-enabled-blue.svg
+   :target: http://opentracing.io
+   :alt: OpenTracing Badge
 
-**Warning! This feature is experimental currently and not tested well. You should think twice to use this package in production.**
+
+Supporting fire & forget Tornado coroutines in python opentracing
+=================================================================
 
 `Opentracing python library <https://github.com/opentracing/opentracing-python/>`_ provides nice mechanism for tracing of `Tornado <https://github.com/tornadoweb/tornado>`_ code based on coroutines.
 
