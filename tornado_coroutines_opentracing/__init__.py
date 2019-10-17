@@ -19,6 +19,8 @@ def tracer_stack_context(parent_span=None):
     It allows to specify span in new stack context that will be parent for
     children spans.
     """
+    # TODO: remove this when the feature be released
+    # https://github.com/opentracing/opentracing-python/pull/126
     if parent_span is not None:
         scope = _TornadoScope(
             global_tracer().scope_manager, parent_span, False)
